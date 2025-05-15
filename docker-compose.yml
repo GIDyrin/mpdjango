@@ -42,9 +42,11 @@ services:
           echo 'Waiting for PostgreSQL...';
           sleep 5; 
         done;
+        python manage.py makemigrations;
         python manage.py migrate;
         python manage.py collectstatic;
         python manage.py runserver 0.0.0.0:8000
+        python manage.py createsuperuser;
       "
     working_dir: /app
     volumes:

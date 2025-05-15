@@ -1,41 +1,74 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .models import Track
-from .serializers import TrackSerializer
+from .models import Track, Playlist
+from .serializers import TrackSerializer, TrackUploadSerializer
 import shutil
 import os
 from django.conf import settings
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import MultiPartParser, FormParser
 from .tasks import convert_to_hls
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TrackUploadView(generics.CreateAPIView):
-    serializer_class = TrackSerializer
-    parser_classes = [MultiPartParser]
-    
-    def post(self, request, *args, **kwargs):
-        # Поддержка нескольких файлов
-        files = request.FILES.getlist('original_file')
-        tracks = []
-        
-        for file in files:
-            serializer = self.get_serializer(data={
-                'user': request.user.id,
-                'original_file': file,
-                'title': request.data.get('title', file.name),
-                'artist': request.data.get('artist', 'Unknown Artist')
-            })
-            serializer.is_valid(raise_exception=True)
-            track = serializer.save()
-            tracks.append(track)
-            
-            # Запуск задачи конвертации
-            convert_to_hls.delay(track.id)
-        
-        return Response(
-            {"status": f"{len(tracks)} tracks uploaded"}, 
-            status=status.HTTP_201_CREATED
-        )
+    serializer_class = TrackUploadSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    def create(self, request, *args, **kwargs):
+        try:
+            with transaction.atomic():
+                user = request.user
+                tracks_data = []
+                
+                # Определяем количество треков
+                num_tracks = sum(
+                    1 for key in request.FILES 
+                    if key.startswith('tracks[') and key.endswith('].original_file')
+                )
+
+                for i in range(num_tracks):
+                    file_key = f'tracks[{i}].original_file'
+                    track_data = {
+                        'original_file': request.FILES[file_key],
+                        'title': request.data.get(f'tracks[{i}].title', 'Untitled'),
+                        'artist': request.data.get(f'tracks[{i}].artist', 'Unknown Artist'),
+                        'duration': request.data.get(f'tracks[{i}].duration', 0),
+                        'user': user.id
+                    }
+                    tracks_data.append(track_data)
+
+                serializer = self.get_serializer(data=tracks_data, many=True)
+                serializer.is_valid(raise_exception=True)
+                self.perform_create(serializer)
+                
+                try:
+                    system_playlist = Playlist.objects.get(user=user, is_system=True)
+                except ObjectDoesNotExist:
+                    system_playlist = Playlist.objects.create(
+                        user=user,
+                        name="System Playlist",
+                        is_system=True
+                    )
+
+                system_playlist.tracks.add(*serializer.instance)
+                system_playlist.save()
+
+                # Запуск задач конвертации
+                for track in serializer.instance:
+                    convert_to_hls.delay(track.id)
+
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Upload error: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "File upload failed"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class TrackDeleteView(generics.DestroyAPIView):

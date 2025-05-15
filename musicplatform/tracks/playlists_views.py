@@ -1,22 +1,28 @@
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from .models import Track, Playlist
-from .serializers import PlaylistSerializer
+from .serializers import PlaylistSerializer, PlaylistDetailedSerializer
+
 
 class PlaylistListCreateView(generics.ListCreateAPIView):
     serializer_class = PlaylistSerializer
 
     def get_queryset(self):
         return Playlist.objects.filter(user=self.request.user)
-
+    
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        serializer.save(
+            user=self.request.user,
+            is_system=False  # Явно устанавливаем для новых плейлистов
+        )
+
 
 class PlaylistDetailView(generics.RetrieveDestroyAPIView):
-    serializer_class = PlaylistSerializer
+    serializer_class = PlaylistDetailedSerializer
 
     def get_queryset(self):
         return Playlist.objects.filter(user=self.request.user)
+
 
 class PlaylistAddTracksView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]

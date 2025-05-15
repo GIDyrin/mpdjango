@@ -20,14 +20,12 @@ class Playlist(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     tracks = models.ManyToManyField(Track)
-    is_system = models.BooleanField(default=False)  # Системный плейлист
+    is_system = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.name} ({self.user.username})"
 
-    class Meta:
-        unique_together = ('user', 'is_system')  # Один системный плейлист на пользователя
 
     def delete(self, *args, **kwargs):
         if self.is_system:

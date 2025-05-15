@@ -6,6 +6,7 @@ RUN apt-get update && \
     postgresql-client \
     netcat-openbsd \
     libpq-dev \
+    ffmpeg \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 

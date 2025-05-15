@@ -22,12 +22,35 @@ class TrackSerializer(serializers.ModelSerializer):
         }
 
 
+class TrackUploadSerializer(serializers.ModelSerializer):
+    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    
+    class Meta:
+        model = Track
+        fields = '__all__'
+        read_only_fields = ('hls_playlist', 'created_at')
+        extra_kwargs = {
+            'original_file': {'required': True, 'allow_empty_file': False}
+        }
+
+        
 class PlaylistSerializer(serializers.ModelSerializer):
     track_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Playlist
         fields = ['id', 'name', 'track_count', 'is_system', 'created_at']
+        read_only_fields = ['is_system']
+        extra_kwargs = {
+            'name': {'required': True}
+        }
     
     def get_track_count(self, obj):
         return obj.tracks.count()
+    
+
+class PlaylistDetailedSerializer(serializers.ModelSerializer):
+    
+    class Meta:
+        model = Playlist
+        fields = '__all__'
