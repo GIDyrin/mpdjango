@@ -1,7 +1,7 @@
-from rest_framework import generics, status
+from rest_framework import generics, status, views
 from rest_framework.response import Response
 from .models import Track, Playlist
-from .serializers import TrackSerializer, TrackUploadSerializer
+from .serializers import TrackUploadSerializer
 import shutil
 import os
 from django.conf import settings
@@ -71,24 +71,32 @@ class TrackUploadView(generics.CreateAPIView):
             )
 
 
-class TrackDeleteView(generics.DestroyAPIView):
-    queryset = Track.objects.all()
+class PlaylistTrackDeleteView(views.APIView):
     
-    def get_queryset(self):
-        return Track.objects.filter(user=self.request.user)
+    def delete(self, request, playlist_id, track_id):
+        try:
+            playlist = Playlist.objects.get(id=playlist_id, user=request.user)
+            track = Track.objects.get(id=track_id, user=request.user)
+        except (Playlist.DoesNotExist, Track.DoesNotExist):
+            return Response(status=status.HTTP_404_NOT_FOUND)
 
-    def perform_destroy(self, instance):
-        # Удаляем файлы и директории
-        file_path = instance.original_file.path
-        hls_dir = os.path.join(settings.MEDIA_ROOT, os.path.dirname(instance.hls_playlist))
-        
-        # Удаляем оригинальный файл
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        
-        # Удаляем HLS-директорию
-        if os.path.exists(hls_dir):
-            shutil.rmtree(hls_dir)
-        
-        # Удаляем запись из БД
-        instance.delete()
+        if playlist.is_system:
+            # Полное удаление трека
+            file_path = track.original_file.path
+            hls_dir = os.path.join(
+                settings.MEDIA_ROOT, 
+                os.path.dirname(track.hls_playlist)
+            )
+
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            
+            if os.path.exists(hls_dir):
+                shutil.rmtree(hls_dir)
+            
+            track.delete()
+        else:
+            # Удаление из плейлиста
+            playlist.tracks.remove(track)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)

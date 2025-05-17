@@ -34,5 +34,6 @@ urlpatterns = [
     path('api/playlists/<int:pk>/', PlaylistDetailView.as_view(), name='playlist-detail'),
     path('api/playlists/<int:pk>/add-tracks/', PlaylistAddTracksView.as_view(), name='playlist-add-tracks'),
     path('api/tracks/upload/', TrackUploadView.as_view(), name='track-upload'),
-    path('api/tracks/<int:pk>/delete/', TrackDeleteView.as_view(), name='delete_track'),
+    path('api/playlists/<int:playlist_id>/tracks/<int:track_id>/', PlaylistTrackDeleteView.as_view(), name='playlist-remove-track'),
+    path('api/playlists/system/', SystemPlaylistView.as_view(), name='get_system_playlist'),
 ]
