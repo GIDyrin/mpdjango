@@ -100,3 +100,28 @@ class PlaylistTrackDeleteView(views.APIView):
             playlist.tracks.remove(track)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+
+
+class TrackHLSView(views.APIView):
+    def get(self, request, track_id):
+        try:
+            track = Track.objects.get(id=track_id)
+        except Track.DoesNotExist:
+            return Response(
+                {'error': 'Track not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if not track.hls_playlist:
+            return Response(
+                {'error': 'HLS is not ready for this track'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        hls_url = request.build_absolute_uri(f'/media/hls/{track.hls_playlist}')
+        return Response({
+            'hls_url': hls_url,
+            'mime_type': 'application/vnd.apple.mpegurl',
+            'content_type': 'audio'
+        }, status=status.HTTP_200_OK)

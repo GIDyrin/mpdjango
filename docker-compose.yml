@@ -50,6 +50,7 @@ services:
       "
     working_dir: /app
     volumes:
+      - ./musicplatform/media:/app/media  # Исправленный путь к media
       - ./musicplatform:/app
       - static_volume:/app/staticfiles
     ports:
@@ -71,7 +72,8 @@ services:
     networks:
       - app-network
     volumes:
-    - static_volume:/app/staticfiles
+      - static_volume:/app/staticfiles
+      - ./musicplatform/media:/app/media:ro  # Добавляем монтирование media
 
 
 networks:

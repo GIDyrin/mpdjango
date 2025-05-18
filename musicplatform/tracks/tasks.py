@@ -8,50 +8,58 @@ from tracks.models import Track  # Замените на ваш фактичес
 
 logger = logging.getLogger(__name__)
 
-@shared_task
-def convert_to_hls(track_id):
-    track = None  # Инициализируем переменную track, чтобы избежать ошибки в случае исключения
+@shared_task(bind=True, max_retries=3)
+def convert_to_hls(self, track_id):
+    track = Track.objects.get(id=track_id)
+    input_path = track.original_file.path
+    output_dir = os.path.join(settings.MEDIA_ROOT, f"hls/{track_id}")
+    
     try:
-        track = Track.objects.get(id=track_id)
-        input_path = track.original_file.path
-        output_dir = os.path.join(settings.MEDIA_ROOT, f"hls/{track_id}")
-        
-        # Создаем выходную директорию, если она не существует
         os.makedirs(output_dir, exist_ok=True)
         
-        # Формируем команду для ffmpeg
+        # Проверка битрейта исходного файла
+        probe_cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-select_streams', 'a:0',
+            '-show_entries', 'stream=bit_rate',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            input_path
+        ]
+        bitrate = subprocess.check_output(probe_cmd, text=True).strip()
+        target_bitrate = min(int(bitrate) if bitrate.isdigit() else 128000, 128000)
+
         cmd = [
             'ffmpeg',
+            '-y',
             '-i', input_path,
-            '-map', '0:a',  # Выбираем только аудиодорожку
-            '-c:a', 'aac',  # Кодек AAC
-            '-b:a', '128k', # Битрейт 128 kbps (128 чтобы гарантированно преобразовать)
+            '-map', '0:a',
+            '-c:a', 'aac',
+            '-b:a', f'{target_bitrate // 1000}k',
             '-f', 'hls',
-            '-hls_time', '10',  # Длина сегмента 10 секунд
-            '-hls_list_size', '0',  
-            '-hls_segment_filename', f'{output_dir}/segment_%03d.ts',  # Формат имен для сегментов
-            f'{output_dir}/playlist.m3u8' 
+            '-hls_time', '10',
+            '-hls_playlist_type', 'event',  # Изменено с vod на event
+            '-hls_segment_filename', f'{output_dir}/segment_%03d.ts',
+            f'{output_dir}/playlist.m3u8'
         ]
 
-        # Запускаем ffmpeg
-        result = subprocess.run(
+        subprocess.run(
             cmd,
-            capture_output=True,
-            text=True,
-            check=True
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
         )
-        
-        # Проверка результата
-        if not os.path.exists(f'{output_dir}/playlist.m3u8'):
-            raise Exception("HLS playlist not created")
-            
-        # Сохраняем путь к плейлисту в базе данных
-        track.hls_playlist = f"hls/{track_id}/playlist.m3u8"
+
+        track.hls_playlist = f"{track_id}/playlist.m3u8"
         track.save()
         
+    except subprocess.CalledProcessError as e:
+        logger.error(f"FFmpeg error: {e.output}")
+        shutil.rmtree(output_dir, ignore_errors=True)
+        self.retry(countdown=60 * (self.request.retries + 1))
     except Exception as e:
-        logger.error(f"Conversion failed for track {track_id}: {str(e)}")
-        if track:
-            track.delete()  # Удаляем трек в случае ошибки
-        shutil.rmtree(output_dir, ignore_errors=True)  # Удаляем выходную директорию, если она существует
-        raise
+        logger.error(f"Conversion error: {str(e)}")
+        shutil.rmtree(output_dir, ignore_errors=True)
+        track.hls_playlist = ""
+        track.save()
