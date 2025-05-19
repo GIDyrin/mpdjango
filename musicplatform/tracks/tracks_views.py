@@ -4,6 +4,9 @@ from .models import Track, Playlist
 from .serializers import TrackUploadSerializer
 import shutil
 import os
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+from tempfile import NamedTemporaryFile
 from django.conf import settings
 from rest_framework.parsers import MultiPartParser, FormParser
 from .tasks import convert_to_hls
@@ -18,58 +21,85 @@ class TrackUploadView(generics.CreateAPIView):
     serializer_class = TrackUploadSerializer
     parser_classes = [MultiPartParser, FormParser]
 
+    def handle_chunk(self, request):
+        chunk = request.FILES['chunk']
+        file_id = request.POST['file_id']
+        chunk_index = int(request.POST['chunk_index'])
+        total_chunks = int(request.POST['total_chunks'])
+        
+        # Сохраняем чанк во временную директорию
+        tmp_dir = os.path.join(settings.MEDIA_ROOT, 'tmp', file_id)
+        os.makedirs(tmp_dir, exist_ok=True)
+        
+        chunk_name = os.path.join(tmp_dir, f'chunk_{chunk_index:04d}')
+        with default_storage.open(chunk_name, 'wb') as f:
+            for chunk_part in chunk.chunks():
+                f.write(chunk_part)
+        
+        # Проверяем завершение загрузки
+        if chunk_index + 1 == total_chunks:
+            return self.finalize_upload(request, file_id, tmp_dir)
+        
+        return Response({'status': 'chunk_uploaded'})
+
+    def finalize_upload(self, request, file_id, tmp_dir):
+        # Собираем файл из чанков
+        original_filename = request.POST['original_filename']
+        final_filename = default_storage.get_available_name(
+            os.path.join('tracks/original', original_filename)
+        )
+        
+        with NamedTemporaryFile('wb', delete=False) as final_file:
+            for chunk_name in sorted(os.listdir(tmp_dir)):
+                chunk_path = os.path.join(tmp_dir, chunk_name)
+                with open(chunk_path, 'rb') as chunk_file:
+                    final_file.write(chunk_file.read())
+                os.remove(chunk_path)
+            os.rmdir(tmp_dir)
+            final_file.flush()
+        
+        # Сохраняем трек в БД
+        track_data = {
+            'user': request.user.id,
+            'title': request.POST['title'],
+            'artist': request.POST['artist'],
+            'duration': request.POST['duration'],
+            'original_file': ContentFile(
+                open(final_file.name, 'rb').read(),
+                name=final_filename
+            )
+        }
+        
+        serializer = self.get_serializer(data=track_data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        
+        # Добавляем в системный плейлист
+        system_playlist, _ = Playlist.objects.get_or_create(
+            user=request.user,
+            is_system=True,
+            defaults={'name': 'System Playlist'}
+        )
+        system_playlist.tracks.add(serializer.instance)
+        system_playlist.save()
+        
+        # Запускаем конвертацию
+        convert_to_hls.delay(serializer.instance.id)
+        
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     def create(self, request, *args, **kwargs):
         try:
-            with transaction.atomic():
-                user = request.user
-                tracks_data = []
-                
-                # Определяем количество треков
-                num_tracks = sum(
-                    1 for key in request.FILES 
-                    if key.startswith('tracks[') and key.endswith('].original_file')
-                )
-
-                for i in range(num_tracks):
-                    file_key = f'tracks[{i}].original_file'
-                    track_data = {
-                        'original_file': request.FILES[file_key],
-                        'title': request.data.get(f'tracks[{i}].title', 'Untitled'),
-                        'artist': request.data.get(f'tracks[{i}].artist', 'Unknown Artist'),
-                        'duration': request.data.get(f'tracks[{i}].duration', 0),
-                        'user': user.id
-                    }
-                    tracks_data.append(track_data)
-
-                serializer = self.get_serializer(data=tracks_data, many=True)
-                serializer.is_valid(raise_exception=True)
-                self.perform_create(serializer)
-                
-                try:
-                    system_playlist = Playlist.objects.get(user=user, is_system=True)
-                except ObjectDoesNotExist:
-                    system_playlist = Playlist.objects.create(
-                        user=user,
-                        name="System Playlist",
-                        is_system=True
-                    )
-
-                system_playlist.tracks.add(*serializer.instance)
-                system_playlist.save()
-
-                # Запуск задач конвертации
-                for track in serializer.instance:
-                    convert_to_hls.delay(track.id)
-
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-
+            if 'chunk' in request.FILES:
+                return self.handle_chunk(request)
+            # Старая реализация для обратной совместимости
+            return super().create(request, *args, **kwargs)
         except Exception as e:
             logger.error(f"Upload error: {str(e)}", exc_info=True)
             return Response(
                 {"error": "File upload failed"}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 
 class PlaylistTrackDeleteView(views.APIView):
     
