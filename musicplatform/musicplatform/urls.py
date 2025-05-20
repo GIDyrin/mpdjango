@@ -37,4 +37,6 @@ urlpatterns = [
     path('api/playlists/<int:playlist_id>/tracks/<int:track_id>/', PlaylistTrackDeleteView.as_view(), name='playlist-remove-track'),
     path('api/playlists/system/', SystemPlaylistView.as_view(), name='get_system_playlist'),
     path('api/tracks/<int:track_id>/hls/', TrackHLSView.as_view(), name='track-hls'),
+    path('api/tracks/<int:track_id>/download/', TrackDownloadView.as_view(), name='track-download'),
+    path('api/playlists/<int:playlist_id>/download/', PlaylistDownloadView.as_view(), name='playlist-download'),
 ]

@@ -17,9 +17,9 @@ class PlaylistListCreateView(generics.ListCreateAPIView):
         )
 
 
-
 class PlaylistDetailView(generics.RetrieveDestroyAPIView):
     serializer_class = PlaylistDetailedSerializer
+    queryset = Playlist.objects.prefetch_related('tracks')
 
     def get_queryset(self):
         return Playlist.objects.filter(user=self.request.user)

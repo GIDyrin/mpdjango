@@ -16,38 +16,12 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
 
 class CustomTokenRefreshView(TokenRefreshView):
-    def post(self, request, *args, **kwargs):
-        refresh_token = request.data.get('refresh')
-        
-        try:
-            # Добавляем старый refresh-токен в черный список
-            if refresh_token:
-                token = RefreshToken(refresh_token)
-                token.blacklist()
+    pass
             
-            # Генерируем новые токены
-            response = super().post(request, *args, **kwargs)
-            
-            return response
-            
-        except TokenError as e:
-            return Response(
-                {'error': str(e)}, 
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-    
 
 class LogoutView(APIView):
-
     def post(self, request):
         try:
-            # Добавляем access token в черный список
-            access_token = request.auth
-            jti = access_token.get('jti')
-            token = OutstandingToken.objects.get(jti=jti)
-            BlacklistedToken.objects.get_or_create(token=token)
-
-            # Добавляем refresh token в черный список
             refresh_token = request.data.get('refresh')
             if refresh_token:
                 token = RefreshToken(refresh_token)
@@ -57,7 +31,6 @@ class LogoutView(APIView):
                 {'message': 'Successfully logged out'}, 
                 status=status.HTTP_205_RESET_CONTENT
             )
-
         except Exception as e:
             return Response(
                 {'error': str(e)}, 
