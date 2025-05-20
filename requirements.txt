@@ -8,6 +8,7 @@ click-plugins==1.1.1
 click-repl==0.3.0
 dj-database-url==2.3.0
 Django==5.2.1
+django-cleanup==9.0.0
 django-cors-headers==4.7.0
 django-redis==5.4.0
 django-rest-framework==0.1.0
@@ -18,7 +19,6 @@ future==1.0.0
 kombu==5.5.3
 prompt_toolkit==3.0.51
 psycopg2==2.9.10
-psycopg2-binary==2.9.9
 PyJWT==2.9.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.0

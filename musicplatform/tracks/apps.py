@@ -1,5 +1,6 @@
 from django.apps import AppConfig
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_delete
+
 
 
 class TracksConfig(AppConfig):
@@ -11,7 +12,11 @@ class TracksConfig(AppConfig):
         User = get_user_model()
         
         # Импортируем обработчик сигнала
-        from .signals import create_system_playlist
+        from .signals import create_system_playlist, delete_track_files
+        from tracks.models import Track
         
         # Регистрируем сигнал
         post_save.connect(create_system_playlist, sender=User)
+        pre_delete.connect(delete_track_files, sender=Track)
+
+

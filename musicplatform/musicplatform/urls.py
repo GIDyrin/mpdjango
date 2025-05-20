@@ -16,7 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-from tracks.jwt_views import CustomTokenRefreshView, LogoutView, CustomTokenObtainPairView
+from tracks.jwt_views import *
 from tracks.views import *
 
 
@@ -39,4 +39,5 @@ urlpatterns = [
     path('api/tracks/<int:track_id>/hls/', TrackHLSView.as_view(), name='track-hls'),
     path('api/tracks/<int:track_id>/download/', TrackDownloadView.as_view(), name='track-download'),
     path('api/playlists/<int:playlist_id>/download/', PlaylistDownloadView.as_view(), name='playlist-download'),
+    path('api/auth/delete-account/', AccountDeleteView.as_view(), name='delete_account')
 ]
