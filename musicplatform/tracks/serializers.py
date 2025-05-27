@@ -56,27 +56,9 @@ class PlaylistDetailedSerializer(serializers.ModelSerializer):
     class Meta:
         model = Playlist
         fields = '__all__'
-    
+
     def get_tracks(self, obj):
-        if obj.is_system:
-            return TrackSerializer(
-                obj.tracks.all().order_by('created_at'),
-                many=True,
-                context=self.context
-            ).data
-        else:
-            # Получаем правильный порядок треков через промежуточную модель
-            ordered_tracks = obj.tracks.through.objects.filter(playlist=obj)\
-                .order_by('id')\
-                .values_list('track', flat=True)
-            
-            # Сохраняем порядок с помощью сохранения порядка ID
-            preserved_order = Case(
-                *[When(pk=pk, then=pos) for pos, pk in enumerate(ordered_tracks)])
-            
-            return TrackSerializer(
-                obj.tracks.filter(id__in=ordered_tracks)\
-                    .order_by(preserved_order),
-                many=True,
-                context=self.context
-            ).data
+        queryset = obj.tracks.all().order_by('created_at')
+        return TrackSerializer(queryset, many=True, context=self.context).data
+    
+
